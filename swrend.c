@@ -1,5 +1,8 @@
 // shitty and slow 3d software renderer
+// Usage:
 // $ gcc -std=c11 -lm swrend.c -o swrend
+// $ ./swrend
+// $ feh out.ppm # open the pic
 //
 // Copyright (c) 2016, Aurélien Aptel <aurelien.aptel@gmail.com>
 //
