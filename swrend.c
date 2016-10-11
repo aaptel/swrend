@@ -595,14 +595,14 @@ obj_t* obj_load (const char* fn)
                         ind+0, ind+1, ind+2, ind+3, ind+4, ind+5,
                         ind+6, ind+7, ind+8) == 9) {
             obj->f[nb_f].v[0] = ind[0]-1;
-            obj->f[nb_f].n[0] = ind[1]-1;
-            obj->f[nb_f].t[0] = ind[2]-1;
+            obj->f[nb_f].t[0] = ind[1]-1;
+            obj->f[nb_f].n[0] = ind[2]-1;
             obj->f[nb_f].v[1] = ind[3]-1;
-            obj->f[nb_f].n[1] = ind[4]-1;
-            obj->f[nb_f].t[1] = ind[5]-1;
+            obj->f[nb_f].t[1] = ind[4]-1;
+            obj->f[nb_f].n[1] = ind[5]-1;
             obj->f[nb_f].v[2] = ind[6]-1;
-            obj->f[nb_f].n[2] = ind[7]-1;
-            obj->f[nb_f].t[2] = ind[8]-1;
+            obj->f[nb_f].t[2] = ind[7]-1;
+            obj->f[nb_f].n[2] = ind[8]-1;
             nb_f++;
         }
         else {
@@ -612,6 +612,11 @@ obj_t* obj_load (const char* fn)
         }
         line++;
     }
+
+    assert(nb_v == obj->nb_v);
+    assert(nb_n == obj->nb_n);
+    assert(nb_f == obj->nb_f);
+    assert(nb_uv == obj->nb_uv);
 
     fclose(fh);
     return obj;
@@ -746,6 +751,8 @@ static void _img_triangle_top (img_t* img, imgf_t* zbuf, pixel_shader_func pshad
         int minx = round(MIN(curx1, curx2));
         int maxx = round(MAX(curx1, curx2));
         for (int x = minx; x <= maxx; x++) {
+            if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
+                continue;
             shader_interpolate_attr(x, y, attr, &pattr);
             if (pattr.v.z > IMG_P(zbuf, x, y)) {
                 pshader(img, &pattr, x, y);
@@ -771,6 +778,8 @@ static void _img_triangle_bot (img_t* img, imgf_t* zbuf, pixel_shader_func pshad
         int minx = roundf(MIN(curx1, curx2));
         int maxx = roundf(MAX(curx1, curx2));
         for (int x = minx; x <= maxx; x++) {
+            if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
+                continue;
             shader_interpolate_attr(x, y, attr, &pattr);
             if (pattr.v.z > IMG_P(zbuf, x, y)) {
                 pshader(img, &pattr, x, y);
