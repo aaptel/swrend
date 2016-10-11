@@ -85,6 +85,12 @@ typedef struct {
 #define IMG_B(c) (((c) >>  0) & 0xff)
 #define PTR_TO_RGB(p) ((uint32_t)(((intptr_t)(p)) & 0xffffff))
 
+uint32_t float_to_rgb (float v)
+{
+    int c = CLAMP(v, 0.0f, 1.0f) * 255.0f;
+    return IMG_RGB(c,c,c);
+}
+
 // safe set pixel (clips on image borders)
 void img_set_p (img_t* p, uint32_t c, int x, int y)
 {
@@ -198,6 +204,17 @@ typedef union {
 typedef struct {
     float v[16];
 } mat4;
+
+uint32_t vec3_to_rgb (const vec3* v)
+{
+    int c[3] = {
+        CLAMP(v->x, 0.0f, 1.0f) * 255.0f,
+        CLAMP(v->y, 0.0f, 1.0f) * 255.0f,
+        CLAMP(v->z, 0.0f, 1.0f) * 255.0f,
+    };
+
+    return IMG_RGB(c[0],c[1],c[2]);
+}
 
 void vec3_from_v4 (vec3* dst, vec4* src)
 {
