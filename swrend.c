@@ -786,9 +786,9 @@ void img_triangle (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_att
         x2 = attr[2].sv.x,
         y2 = attr[2].sv.y;
 
-    PV2(attr[0].sv);
-    PV2(attr[1].sv);
-    PV2(attr[1].sv);
+    // PV2(attr[0].sv);
+    // PV2(attr[1].sv);
+    // PV2(attr[1].sv);
 
     // sort vertex by y, ascending
     int tmp;
@@ -876,7 +876,7 @@ void img_render_obj (img_t* img, const obj_t* obj)
         // img_line(img, 0xff0000, v[0].sv.x, v[0].sv.y, v[1].sv.x, v[1].sv.y);
         // img_line(img, 0xff0000, v[1].sv.x, v[1].sv.y, v[2].sv.x, v[2].sv.y);
         // img_line(img, 0xff0000, v[2].sv.x, v[2].sv.y, v[0].sv.x, v[0].sv.y);
-        printf("tri = %zu\n", i);
+        //printf("tri = %zu\n", i);
     }
 }
 
