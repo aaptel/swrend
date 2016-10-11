@@ -123,6 +123,18 @@ imgf_t* imgf_new (size_t w, size_t h)
     return p;
 }
 
+void img_free (img_t* p)
+{
+    free(p->buf);
+    free(p);
+}
+
+void imgf_free (imgf_t* p)
+{
+    free(p->buf);
+    free(p);
+}
+
 img_t* img_from_imgf (imgf_t* pf)
 {
     img_t* p = img_new(pf->w, pf->h);
@@ -895,6 +907,8 @@ void img_render_obj (img_t* img, const obj_t* obj)
         // img_line(img, 0xff0000, v[2].sv.x, v[2].sv.y, v[0].sv.x, v[0].sv.y);
         //printf("tri = %zu\n", i);
     }
+
+    imgf_free(zbuf);
 }
 
 void test_img (void)
