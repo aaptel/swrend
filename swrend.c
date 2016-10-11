@@ -146,7 +146,7 @@ int img_to_ppm (const img_t* p, const char* fn)
 
     for (size_t y = 0; y < p->h; y++) {
         for (size_t x = 0; x < p->w; x++) {
-            uint32_t c = IMG_P(p, x, y);
+            uint32_t c = IMG_P(p, x, p->h-y-1);
             fprintf(fh, "%d %d %d ", IMG_R(c), IMG_G(c), IMG_B(c));
         }
         fprintf(fh, "\n");
@@ -837,8 +837,8 @@ void pshader_color (img_t* o, vert_attr_t* attr, int x, int y)
 void img_render_obj (img_t* img, const obj_t* obj)
 {
     mat4 trans, scale, final;
-    mat4_translate(&trans, -1.0f, -1.0f, -1.0f);
-    mat4_scale(&scale, -.5f*img->w, -.5f*img->w, -.5f*img->w);
+    mat4_translate(&trans, 1.0f, 1.0f, 1.0f);
+    mat4_scale(&scale, .5f*img->w, .5f*img->w, .5f*img->w);
     mat4_mul(&final, &scale, &trans);
 
     vert_attr_t v[3];
