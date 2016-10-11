@@ -846,6 +846,8 @@ void img_triangle (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_att
     // img_line(img, 0x880000, x1, y1, x3, y3);
 }
 
+size_t FRAME = 0, FRAME_MAX = 30;
+
 // simple color pixel shader
 void pshader_color (img_t* o, vert_attr_t* attr, int x, int y)
 {
@@ -858,7 +860,9 @@ void pshader_color (img_t* o, vert_attr_t* attr, int x, int y)
     // img_set_p(o, vec3_to_rgb(&attr->n), x, y);
     // return;
 
-    vec3 light = {.v = {0.0f, 1.0f, 0.0f}};
+    float light_angle = (FRAME/(float)FRAME_MAX)*2.0f*3.14159265;
+    vec3 light = {.v = {cosf(light_angle), 1.0, sinf(light_angle)}};
+    vec3_normalize(&light);
     float d = vec3_dot(&attr->n, &light);
     img_set_p(o, float_to_rgb(d), x, y);
 }
@@ -948,9 +952,21 @@ int main (int argc, char** argv)
             g_debug = 1;
     }
 
+    char fn[512];
     obj_t* obj = obj_load("obj/head/head.obj");
     img_t* img = img_new(500, 500);
-    img_render_obj(img, obj);
-    img_to_ppm(img, "out.ppm");
+    for (FRAME = 0; FRAME <= FRAME_MAX; FRAME++) {
+        img_fill(img, 0x000000);
+        img_render_obj(img, obj);
+        sprintf(fn, "out_%03zu.ppm", FRAME);
+        img_to_ppm(img, fn);
+        printf("frame %03zu/%03zu -> %s\n", FRAME, FRAME_MAX, fn);
+    }
+
+    const char* cmd = "convert -dispose none -delay 1.5 out_*.ppm -coalesce out.gif";
+    printf("running cmd to make gif... %s\n", cmd);
+    system(cmd);
+    printf("ok\n");
+
     return 0;
 }
