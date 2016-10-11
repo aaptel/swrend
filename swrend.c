@@ -717,9 +717,15 @@ static void shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert
     out->v.z = out->bc.v[0]*attr[0].v.z + out->bc.v[1]*attr[1].v.z + out->bc.v[2]*attr[2].v.z;
 
     // interpolate&normalize normal
-    out->n.x = out->bc.v[0]*attr[0].n.x + out->bc.v[1]*attr[1].n.x + out->bc.v[2]*attr[2].n.x;
-    out->n.y = out->bc.v[0]*attr[0].n.y + out->bc.v[1]*attr[1].n.y + out->bc.v[2]*attr[2].n.y;
-    out->n.z = out->bc.v[0]*attr[0].n.z + out->bc.v[1]*attr[1].n.z + out->bc.v[2]*attr[2].n.z;
+    // out->n.x = out->bc.v[0]*attr[0].n.x + out->bc.v[1]*attr[1].n.x + out->bc.v[2]*attr[2].n.x;
+    // out->n.y = out->bc.v[0]*attr[0].n.y + out->bc.v[1]*attr[1].n.y + out->bc.v[2]*attr[2].n.y;
+    // out->n.z = out->bc.v[0]*attr[0].n.z + out->bc.v[1]*attr[1].n.z + out->bc.v[2]*attr[2].n.z;
+    vec3 ab, ac;
+    vec3_sub(&ab, (vec3*)&attr[1].v, (vec3*)&attr[0].v);
+    vec3_sub(&ac, (vec3*)&attr[2].v, (vec3*)&attr[0].v);
+    vec3_normalize(&ab);
+    vec3_normalize(&ac);
+    vec3_cross(&out->n, &ab, &ac);
     vec3_normalize(&out->n);
 
     // TODO interpolate uv coord, color
