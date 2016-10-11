@@ -821,17 +821,18 @@ void img_triangle (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_att
 // simple color pixel shader
 void pshader_color (img_t* o, vert_attr_t* attr, int x, int y)
 {
+    // zbuffer
+    // int depth = (int)( (1.0f+attr->v.z/500.0f) * 255.0f);
+    // img_set_p(o, IMG_RGB(depth, depth, depth), x, y);
+    // return;
+
+    // normals
+    // img_set_p(o, vec3_to_rgb(&attr->n), x, y);
+    // return;
+
     vec3 light = {.v = {0.0f, 1.0f, 0.0f}};
     float d = vec3_dot(&attr->n, &light);
-    d = CLAMP(d, 0.0f, 1.0f);
-    int v = roundf(d*255.0f);
-
-    uint32_t c = IMG_RGB(v,v,v);
-
-    // uint32_t c = IMG_RGB((int)roundf(attr->bc.x*255),
-    //                      (int)roundf(attr->bc.y*255),
-    //                      (int)roundf(attr->bc.z*255));
-    img_set_p(o, c, x, y);
+    img_set_p(o, float_to_rgb(d), x, y);
 }
 
 void img_render_obj (img_t* img, const obj_t* obj)
