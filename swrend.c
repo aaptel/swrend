@@ -31,6 +31,7 @@
 #include <errno.h>
 #include <math.h>
 #include <assert.h>
+#include <float.h>
 
 // basic utils
 
@@ -71,6 +72,11 @@ typedef struct {
     size_t w, h;
 } img_t;
 
+typedef struct {
+    float* buf;
+    size_t w, h;
+} imgf_t;
+
 #define IMG_P(p, x, y) ((p)->buf[ (y)*(p)->w  + (x)])
 #define IMG_RGB(r, g, b) ((((r) & 0xff) << 16) + (((g) & 0xff) << 8) + (((b) & 0xff) << 0))
 #define IMG_A(c) (((c) >> 24) & 0xff)
@@ -86,12 +92,39 @@ void img_set_p (img_t* p, uint32_t c, int x, int y)
         IMG_P(p, x, y) = c;
 }
 
+// safe set pixel (clips on image borders)
+void imgf_set_p (imgf_t* p, float v, int x, int y)
+{
+    if (0 <= x&&x < p->w && 0 <= y&&y < p->h)
+        IMG_P(p, x, y) = v;
+}
+
 img_t* img_new (size_t w, size_t h)
 {
     img_t *p = xcalloc(1, sizeof(*p));
     p->buf = xcalloc(w*h, sizeof(*p->buf));
     p->w = w;
     p->h = h;
+    return p;
+}
+
+imgf_t* imgf_new (size_t w, size_t h)
+{
+    imgf_t *p = xcalloc(1, sizeof(*p));
+    p->buf = xcalloc(w*h, sizeof(*p->buf));
+    p->w = w;
+    p->h = h;
+    return p;
+}
+
+img_t* img_from_imgf (imgf_t* pf)
+{
+    img_t* p = img_new(pf->w, pf->h);
+    size_t max = pf->w * pf->h;
+    for (size_t i = 0; i < max; i++) {
+        uint32_t c = (CLAMP(pf->buf[i], 0.0f, 1.0f)*255.0f);
+        p->buf[i] = c|(c<<8)|(c<<16);
+    }
     return p;
 }
 
@@ -661,7 +694,12 @@ static void shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert
     // get barycentric coef
     memcpy(&out->bc, &clipbc, sizeof(clipbc));
 
-    // interpolate + normalize normal
+    // interpolate world pos
+    out->v.x = out->bc.v[0]*attr[0].v.x + out->bc.v[1]*attr[1].v.x + out->bc.v[2]*attr[2].v.x;
+    out->v.y = out->bc.v[0]*attr[0].v.y + out->bc.v[1]*attr[1].v.y + out->bc.v[2]*attr[2].v.y;
+    out->v.z = out->bc.v[0]*attr[0].v.z + out->bc.v[1]*attr[1].v.z + out->bc.v[2]*attr[2].v.z;
+
+    // interpolate&normalize normal
     out->n.x = out->bc.v[0]*attr[0].n.x + out->bc.v[1]*attr[1].n.x + out->bc.v[2]*attr[2].n.x;
     out->n.y = out->bc.v[0]*attr[0].n.y + out->bc.v[1]*attr[1].n.y + out->bc.v[2]*attr[2].n.y;
     out->n.z = out->bc.v[0]*attr[0].n.z + out->bc.v[1]*attr[1].n.z + out->bc.v[2]*attr[2].n.z;
@@ -670,7 +708,7 @@ static void shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert
     // TODO interpolate uv coord, color
 }
 
-static void _img_triangle_top (img_t* img, pixel_shader_func pshader, vert_attr_t* attr,
+static void _img_triangle_top (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
                                int x0, int y0, int x1, int y1, int x2)
 {
     float invslope1 = (x1 - x0) / (float)(y1 - y0);
@@ -686,14 +724,17 @@ static void _img_triangle_top (img_t* img, pixel_shader_func pshader, vert_attr_
         int maxx = round(MAX(curx1, curx2));
         for (int x = minx; x <= maxx; x++) {
             shader_interpolate_attr(x, y, attr, &pattr);
-            pshader(img, &pattr, x, y);
+            if (pattr.v.z > IMG_P(zbuf, x, y)) {
+                pshader(img, &pattr, x, y);
+                imgf_set_p(zbuf, pattr.v.z, x, y);
+            }
         }
         curx1 += invslope1;
         curx2 += invslope2;
     }
 }
 
-static void _img_triangle_bot (img_t* img, pixel_shader_func pshader, vert_attr_t* attr,
+static void _img_triangle_bot (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
                                int x0, int y0, int x1, int x2, int y2)
 {
     float invslope1 = (x2 - x0) / (float)(y2 - y0);
@@ -708,7 +749,10 @@ static void _img_triangle_bot (img_t* img, pixel_shader_func pshader, vert_attr_
         int maxx = roundf(MAX(curx1, curx2));
         for (int x = minx; x <= maxx; x++) {
             shader_interpolate_attr(x, y, attr, &pattr);
-            pshader(img, &pattr, x, y);
+            if (pattr.v.z > IMG_P(zbuf, x, y)) {
+                pshader(img, &pattr, x, y);
+                imgf_set_p(zbuf, pattr.v.z, x, y);
+            }
         }
         curx1 -= invslope1;
         curx2 -= invslope2;
@@ -716,7 +760,7 @@ static void _img_triangle_bot (img_t* img, pixel_shader_func pshader, vert_attr_
 }
 
 
-void img_triangle (img_t* img, pixel_shader_func pshader, vert_attr_t* attr)
+void img_triangle (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr)
 {
     int x0 = attr[0].sv.x,
         y0 = attr[0].sv.y,
@@ -749,8 +793,8 @@ void img_triangle (img_t* img, pixel_shader_func pshader, vert_attr_t* attr)
     int x3 = (int)(x0 + ((float)(y1 - y0) / (float)(y2 - y0)) * (x2 - x0));
     // int y3 = y1;
 
-    _img_triangle_top(img, pshader, attr, x0, y0, x1, y1, x3);
-    _img_triangle_bot(img, pshader, attr, x1, y1, x3, x2, y2);
+    _img_triangle_top(img, zbuf, pshader, attr, x0, y0, x1, y1, x3);
+    _img_triangle_bot(img, zbuf, pshader, attr, x1, y1, x3, x2, y2);
     // img_line(img, 0x008800, x0, y0, x2, y2);
     // img_line(img, 0x008800, x0, y0, x1, y1);
     // img_line(img, 0x008800, x1, y1, x2, y2);
@@ -784,6 +828,12 @@ void img_render_obj (img_t* img, const obj_t* obj)
     vec4 tmp1, tmp;
     size_t n = obj_get_nb_face(obj);
 
+
+    imgf_t* zbuf = imgf_new(img->w, img->h);
+    for (size_t i = 0; i < zbuf->w*zbuf->h; i++) {
+        zbuf->buf[i] = -FLT_MAX;
+    }
+
     for (size_t i = 0; i < 3; i++) {
         v[i].v.w = 1.0f;
     }
@@ -802,7 +852,7 @@ void img_render_obj (img_t* img, const obj_t* obj)
 
         // frag shader
 
-        img_triangle(img, pshader_color, v);
+        img_triangle(img, zbuf, pshader_color, v);
 
         // wireframe
 
