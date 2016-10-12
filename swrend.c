@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <errno.h>
 #include <math.h>
@@ -97,12 +98,6 @@ typedef struct {
 
 #define IMG_P(p, x, y) ((p)->buf[ (y)*(p)->w  + (x)])
 #define IMG_RGB(r, g, b) ((vec3){.v = {r, g, b}})
-#define IMG_A(c) (((c) >> 24) & 0xff)
-#define IMG_R(c) (((c) >> 16) & 0xff)
-#define IMG_G(c) (((c) >>  8) & 0xff)
-#define IMG_B(c) (((c) >>  0) & 0xff)
-#define PTR_TO_RGB(p) ((uint32_t)(((intptr_t)(p)) & 0xffffff))
-
 
 void float_to_rgb (float v, vec3* rgb)
 {
@@ -174,6 +169,8 @@ void img_line (img_t* p, vec3* c, int x0, int y0, int x1, int y1)
     float dx = x1-x0;
     float dy = y1-y0;
     int len = ceilf(sqrtf(dx*dx + dy*dy));
+
+    assert(len >= 0);
 
     dx /= len;
     dy /= len;
@@ -601,19 +598,19 @@ size_t obj_get_nb_face (const obj_t* o)
 void obj_get_face (const obj_t* o, size_t i, vert_attr_t* v1, vert_attr_t* v2, vert_attr_t* v3)
 {
     vec4_from_v3(&v1->v, &o->v[o->f[i].v[0]], 1.0f);
-    memcpy(&v1->n, &o->n[o->f[i].n[0]], sizeof(vec3));
+    v1->n = o->n[o->f[i].n[0]];
 
     vec4_from_v3(&v2->v, &o->v[o->f[i].v[1]], 1.0f);
-    memcpy(&v2->n, &o->n[o->f[i].n[1]], sizeof(vec3));
+    v2->n = o->n[o->f[i].n[1]];
 
     vec4_from_v3(&v3->v, &o->v[o->f[i].v[2]], 1.0f);
-    memcpy(&v3->n, &o->n[o->f[i].n[2]], sizeof(vec3));
+    v3->n = o->n[o->f[i].n[2]];
 }
 
 typedef void (*pixel_shader_func) (img_t* out, vert_attr_t* attr, int x, int y);
 
 // compute barycentric interpolation for point in triangle
-void barycentric_coef (const vec2* p, const vec2* a, const vec2* b, const vec2* c, vec3* r)
+bool barycentric_coef (const vec2* p, const vec2* a, const vec2* b, const vec2* c, vec3* r)
 {
     // general 3d case
 
@@ -652,13 +649,14 @@ void barycentric_coef (const vec2* p, const vec2* a, const vec2* b, const vec2* 
         r->x = 1.0f - (u.x + u.y)/u.z;
         r->y = u.y/u.z;
         r->z = u.x/u.z;
-        return;
+        return true;
     }
 
     // degenerate triangle
     r->x = -1;
     r->y = -1;
     r->z = -1;
+    return false;
 }
 
 // split triangle v0,v1,v2 in 2 top/bottom triangles v0,v1,v3 & v1,v3,v2
@@ -671,12 +669,17 @@ void barycentric_coef (const vec2* p, const vec2* a, const vec2* b, const vec2* 
 //             --- b  \_
 //                ---- \ v2
 
-static void shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert_attr_t* out)
+bool shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert_attr_t* out)
 {
     vec3 screenbc, clipbc;
     vec2 p = {.v = {x, y}};
 
-    barycentric_coef(&p, &attr[0].sv, &attr[1].sv, &attr[2].sv, &screenbc);
+    bool r = barycentric_coef(&p, &attr[0].sv, &attr[1].sv, &attr[2].sv, &screenbc);
+    if (!r) {
+        // TODO wat do?
+        DBG("skipping bad barycentric interpolation: degenerate triangle?");
+        return false;
+    }
 
     // magic...
     clipbc.x = screenbc.x/attr[0].v.w;
@@ -706,6 +709,7 @@ static void shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert
     vec3_normalize(&out->n);
 
     // TODO interpolate uv coord, color
+    return true;
 }
 
 static void _img_triangle_top (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
@@ -725,8 +729,8 @@ static void _img_triangle_top (img_t* img, img_t* zbuf, pixel_shader_func pshade
         for (int x = minx; x <= maxx; x++) {
             if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
                 continue;
-            shader_interpolate_attr(x, y, attr, &pattr);
-            if (pattr.v.z > IMG_P(zbuf, x, y).z) {
+            bool r = shader_interpolate_attr(x, y, attr, &pattr);
+            if (r && pattr.v.z > IMG_P(zbuf, x, y).z) {
                 pshader(img, &pattr, x, y);
                 IMG_P(zbuf, x, y).z = pattr.v.z;
             }
@@ -752,8 +756,8 @@ static void _img_triangle_bot (img_t* img, img_t* zbuf, pixel_shader_func pshade
         for (int x = minx; x <= maxx; x++) {
             if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
                 continue;
-            shader_interpolate_attr(x, y, attr, &pattr);
-            if (pattr.v.z > IMG_P(zbuf, x, y).z) {
+            bool r = shader_interpolate_attr(x, y, attr, &pattr);
+            if (r && pattr.v.z > IMG_P(zbuf, x, y).z) {
                 pshader(img, &pattr, x, y);
                 IMG_P(zbuf, x, y).z = pattr.v.z;
             }
@@ -773,10 +777,6 @@ void img_triangle (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr
         x2 = attr[2].sv.x,
         y2 = attr[2].sv.y;
 
-    // PV2(attr[0].sv);
-    // PV2(attr[1].sv);
-    // PV2(attr[1].sv);
-
     // sort vertex by y, ascending
     int tmp;
     if (y1 < y0) {
@@ -794,15 +794,21 @@ void img_triangle (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr
 
     assert(y0 <= y1&&y1 <= y2);
 
+    // TODO handle this properly
+    if (y2 == y0)
+        return;
+
     int x3 = (int)(x0 + ((float)(y1 - y0) / (float)(y2 - y0)) * (x2 - x0));
-    // int y3 = y1;
+    int y3 = y1;
 
     _img_triangle_top(img, zbuf, pshader, attr, x0, y0, x1, y1, x3);
     _img_triangle_bot(img, zbuf, pshader, attr, x1, y1, x3, x2, y2);
-    // img_line(img, 0x008800, x0, y0, x2, y2);
-    // img_line(img, 0x008800, x0, y0, x1, y1);
-    // img_line(img, 0x008800, x1, y1, x2, y2);
-    // img_line(img, 0x880000, x1, y1, x3, y3);
+
+    // wireframe
+    // img_line(img, &IMG_RGB(1.0f, 1.0f, 1.0f), x0, y0, x2, y2);
+    // img_line(img, &IMG_RGB(1.0f, 1.0f, 1.0f), x0, y0, x1, y1);
+    // img_line(img, &IMG_RGB(1.0f, 1.0f, 1.0f), x1, y1, x2, y2);
+    // img_line(img, &IMG_RGB(1.0f, 0.0f, 0.0f), x1, y1, x3, y3);
 }
 
 size_t FRAME = 0, FRAME_MAX = 30;
@@ -811,12 +817,12 @@ size_t FRAME = 0, FRAME_MAX = 30;
 void pshader_color (img_t* img, vert_attr_t* attr, int x, int y)
 {
     // zbuffer
-    // int depth = (int)( (1.0f+attr->v.z/500.0f) * 255.0f);
-    // img_set_p(o, IMG_RGB(depth, depth, depth), x, y);
+    // float depth = attr->v.z / 500.0f;
+    // img_set_p(img, &IMG_RGB(depth, depth, depth), x, y);
     // return;
 
     // normals
-    // img_set_p(o, vec3_to_rgb(&attr->n), x, y);
+    // img_set_p(img, &attr->n, x, y);
     // return;
 
     vec3 color;
@@ -863,13 +869,6 @@ void img_render_obj (img_t* img, const obj_t* obj)
         // frag shader
 
         img_triangle(img, zbuf, pshader_color, v);
-
-        // wireframe
-
-        // img_line(img, 0xff0000, v[0].sv.x, v[0].sv.y, v[1].sv.x, v[1].sv.y);
-        // img_line(img, 0xff0000, v[1].sv.x, v[1].sv.y, v[2].sv.x, v[2].sv.y);
-        // img_line(img, 0xff0000, v[2].sv.x, v[2].sv.y, v[0].sv.x, v[0].sv.y);
-        //printf("tri = %zu\n", i);
     }
 
     img_free(zbuf);
@@ -891,6 +890,7 @@ int main (int argc, char** argv)
         sprintf(fn, "out_%03zu.ppm", FRAME);
         img_to_ppm(img, fn);
         printf("frame %03zu/%03zu -> %s\n", FRAME, FRAME_MAX, fn);
+        //return 0;
     }
 
     const char* cmd = "convert -dispose none -delay 1.5 out_*.ppm -coalesce out.gif";
