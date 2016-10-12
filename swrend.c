@@ -65,137 +65,7 @@ void* xmalloc (size_t a)
     return p;
 }
 
-// img type and operations
-
-typedef struct {
-    uint32_t* buf;
-    size_t w, h;
-} img_t;
-
-typedef struct {
-    float* buf;
-    size_t w, h;
-} imgf_t;
-
-#define IMG_P(p, x, y) ((p)->buf[ (y)*(p)->w  + (x)])
-#define IMG_RGB(r, g, b) ((((r) & 0xff) << 16) + (((g) & 0xff) << 8) + (((b) & 0xff) << 0))
-#define IMG_A(c) (((c) >> 24) & 0xff)
-#define IMG_R(c) (((c) >> 16) & 0xff)
-#define IMG_G(c) (((c) >>  8) & 0xff)
-#define IMG_B(c) (((c) >>  0) & 0xff)
-#define PTR_TO_RGB(p) ((uint32_t)(((intptr_t)(p)) & 0xffffff))
-
-uint32_t float_to_rgb (float v)
-{
-    int c = CLAMP(v, 0.0f, 1.0f) * 255.0f;
-    return IMG_RGB(c,c,c);
-}
-
-// safe set pixel (clips on image borders)
-void img_set_p (img_t* p, uint32_t c, int x, int y)
-{
-    if (0 <= x&&x < p->w && 0 <= y&&y < p->h)
-        IMG_P(p, x, y) = c;
-}
-
-// safe set pixel (clips on image borders)
-void imgf_set_p (imgf_t* p, float v, int x, int y)
-{
-    if (0 <= x&&x < p->w && 0 <= y&&y < p->h)
-        IMG_P(p, x, y) = v;
-}
-
-img_t* img_new (size_t w, size_t h)
-{
-    img_t *p = xcalloc(1, sizeof(*p));
-    p->buf = xcalloc(w*h, sizeof(*p->buf));
-    p->w = w;
-    p->h = h;
-    return p;
-}
-
-imgf_t* imgf_new (size_t w, size_t h)
-{
-    imgf_t *p = xcalloc(1, sizeof(*p));
-    p->buf = xcalloc(w*h, sizeof(*p->buf));
-    p->w = w;
-    p->h = h;
-    return p;
-}
-
-void img_free (img_t* p)
-{
-    free(p->buf);
-    free(p);
-}
-
-void imgf_free (imgf_t* p)
-{
-    free(p->buf);
-    free(p);
-}
-
-img_t* img_from_imgf (imgf_t* pf)
-{
-    img_t* p = img_new(pf->w, pf->h);
-    size_t max = pf->w * pf->h;
-    for (size_t i = 0; i < max; i++) {
-        uint32_t c = (CLAMP(pf->buf[i], 0.0f, 1.0f)*255.0f);
-        p->buf[i] = c|(c<<8)|(c<<16);
-    }
-    return p;
-}
-
-int img_to_ppm (const img_t* p, const char* fn)
-{
-    FILE* fh = fopen(fn, "w+");
-    if (!fh) {
-        W("fopen %s", strerror(errno));
-        return -1;
-    }
-
-    fprintf(fh, "P3\n%zu %zu\n255\n", p->w, p->h);
-
-    for (size_t y = 0; y < p->h; y++) {
-        for (size_t x = 0; x < p->w; x++) {
-            uint32_t c = IMG_P(p, x, p->h-y-1);
-            fprintf(fh, "%d %d %d ", IMG_R(c), IMG_G(c), IMG_B(c));
-        }
-        fprintf(fh, "\n");
-    }
-    if (fclose(fh) != 0) {
-        W("fclose %s", strerror(errno));
-        return -1;
-    }
-    return 0;
-}
-
-void img_fill (img_t* p, uint32_t c)
-{
-    for (size_t i = 0; i < p->w*p->h; i++)
-        p->buf[i] = c;
-}
-
-void img_line (img_t* p, uint32_t c, int x0, int y0, int x1, int y1)
-{
-    // tiny but slow ray-marching
-
-    float x = x0, y = y0;
-    float dx = x1-x0;
-    float dy = y1-y0;
-    int len = ceilf(sqrtf(dx*dx + dy*dy));
-
-    dx /= len;
-    dy /= len;
-
-    for (int i = 0; i < len; i++) {
-        img_set_p(p, c, roundf(x), roundf(y));
-        x += dx;
-        y += dy;
-    }
-}
-
-// 4d vectors and matrices
+// vector & matrix types
 
 #define PV3(v) printf("%f %f %f\n", (v).x, (v).y, (v).z)
 #define PV2(v) printf("%f %f\n", (v).x, (v).y)
@@ -217,16 +87,105 @@ typedef struct {
     float v[16];
 } mat4;
 
-uint32_t vec3_to_rgb (const vec3* v)
-{
-    int c[3] = {
-        CLAMP(v->x, 0.0f, 1.0f) * 255.0f,
-        CLAMP(v->y, 0.0f, 1.0f) * 255.0f,
-        CLAMP(v->z, 0.0f, 1.0f) * 255.0f,
-    };
 
-    return IMG_RGB(c[0],c[1],c[2]);
+// image types
+
+typedef struct {
+    vec3* buf;
+    size_t w, h;
+} img_t;
+
+#define IMG_P(p, x, y) ((p)->buf[ (y)*(p)->w  + (x)])
+#define IMG_RGB(r, g, b) ((vec3){.v = {r, g, b}})
+#define IMG_A(c) (((c) >> 24) & 0xff)
+#define IMG_R(c) (((c) >> 16) & 0xff)
+#define IMG_G(c) (((c) >>  8) & 0xff)
+#define IMG_B(c) (((c) >>  0) & 0xff)
+#define PTR_TO_RGB(p) ((uint32_t)(((intptr_t)(p)) & 0xffffff))
+
+
+void float_to_rgb (float v, vec3* rgb)
+{
+    rgb->r = v;
+    rgb->g = v;
+    rgb->b = v;
 }
+
+// safe set pixel (clips on image borders)
+void img_set_p (img_t* p, vec3* c, int x, int y)
+{
+    if (0 <= x&&x < p->w && 0 <= y&&y < p->h)
+        IMG_P(p, x, y) = *c;
+}
+
+img_t* img_new (size_t w, size_t h)
+{
+    img_t *p = xcalloc(1, sizeof(*p));
+    p->buf = xcalloc(w*h, sizeof(*p->buf));
+    p->w = w;
+    p->h = h;
+    return p;
+}
+
+void img_free (img_t* p)
+{
+    free(p->buf);
+    free(p);
+}
+
+int img_to_ppm (const img_t* p, const char* fn)
+{
+    FILE* fh = fopen(fn, "w+");
+    if (!fh) {
+        W("fopen %s", strerror(errno));
+        return -1;
+    }
+
+    fprintf(fh, "P3\n%zu %zu\n255\n", p->w, p->h);
+
+    for (size_t y = 0; y < p->h; y++) {
+        for (size_t x = 0; x < p->w; x++) {
+            vec3 c = IMG_P(p, x, p->h-y-1);
+            c.r = CLAMP(c.r, 0.0f, 1.0f)*255.0f;
+            c.g = CLAMP(c.g, 0.0f, 1.0f)*255.0f;
+            c.b = CLAMP(c.b, 0.0f, 1.0f)*255.0f;
+            fprintf(fh, "%d %d %d ", (int)c.r, (int)c.g, (int)c.b);
+        }
+        fprintf(fh, "\n");
+    }
+    if (fclose(fh) != 0) {
+        W("fclose %s", strerror(errno));
+        return -1;
+    }
+    return 0;
+}
+
+void img_fill (img_t* p, vec3* c)
+{
+    for (size_t i = 0; i < p->w*p->h; i++)
+        p->buf[i] = *c;
+}
+
+void img_line (img_t* p, vec3* c, int x0, int y0, int x1, int y1)
+{
+    // tiny but slow ray-marching
+
+    float x = x0, y = y0;
+    float dx = x1-x0;
+    float dy = y1-y0;
+    int len = ceilf(sqrtf(dx*dx + dy*dy));
+
+    dx /= len;
+    dy /= len;
+
+    for (int i = 0; i < len; i++) {
+        img_set_p(p, c, roundf(x), roundf(y));
+        x += dx;
+        y += dy;
+    }
+}
+
+// 4d vectors and matrices
 
 void vec3_from_v4 (vec3* dst, vec4* src)
 {
@@ -749,7 +708,7 @@ static void shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert
     // TODO interpolate uv coord, color
 }
 
-static void _img_triangle_top (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
+static void _img_triangle_top (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
                                int x0, int y0, int x1, int y1, int x2)
 {
     float invslope1 = (x1 - x0) / (float)(y1 - y0);
@@ -767,9 +726,9 @@ static void _img_triangle_top (img_t* img, imgf_t* zbuf, pixel_shader_func pshad
             if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
                 continue;
             shader_interpolate_attr(x, y, attr, &pattr);
-            if (pattr.v.z > IMG_P(zbuf, x, y)) {
+            if (pattr.v.z > IMG_P(zbuf, x, y).z) {
                 pshader(img, &pattr, x, y);
-                imgf_set_p(zbuf, pattr.v.z, x, y);
+                IMG_P(zbuf, x, y).z = pattr.v.z;
             }
         }
         curx1 += invslope1;
@@ -777,7 +736,7 @@ static void _img_triangle_top (img_t* img, imgf_t* zbuf, pixel_shader_func pshad
     }
 }
 
-static void _img_triangle_bot (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
+static void _img_triangle_bot (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
                                int x0, int y0, int x1, int x2, int y2)
 {
     float invslope1 = (x2 - x0) / (float)(y2 - y0);
@@ -794,9 +753,9 @@ static void _img_triangle_bot (img_t* img, imgf_t* zbuf, pixel_shader_func pshad
             if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
                 continue;
             shader_interpolate_attr(x, y, attr, &pattr);
-            if (pattr.v.z > IMG_P(zbuf, x, y)) {
+            if (pattr.v.z > IMG_P(zbuf, x, y).z) {
                 pshader(img, &pattr, x, y);
-                imgf_set_p(zbuf, pattr.v.z, x, y);
+                IMG_P(zbuf, x, y).z = pattr.v.z;
             }
         }
         curx1 -= invslope1;
@@ -805,7 +764,7 @@ static void _img_triangle_bot (img_t* img, imgf_t* zbuf, pixel_shader_func pshad
 }
 
 
-void img_triangle (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr)
+void img_triangle (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr)
 {
     int x0 = attr[0].sv.x,
         y0 = attr[0].sv.y,
@@ -849,7 +808,7 @@ void img_triangle (img_t* img, imgf_t* zbuf, pixel_shader_func pshader, vert_att
 size_t FRAME = 0, FRAME_MAX = 30;
 
 // simple color pixel shader
-void pshader_color (img_t* o, vert_attr_t* attr, int x, int y)
+void pshader_color (img_t* img, vert_attr_t* attr, int x, int y)
 {
     // zbuffer
     // int depth = (int)( (1.0f+attr->v.z/500.0f) * 255.0f);
@@ -860,11 +819,12 @@ void pshader_color (img_t* o, vert_attr_t* attr, int x, int y)
     // img_set_p(o, vec3_to_rgb(&attr->n), x, y);
     // return;
 
+    vec3 color;
     float light_angle = (FRAME/(float)FRAME_MAX)*2.0f*3.14159265;
     vec3 light = {.v = {cosf(light_angle), 1.0, sinf(light_angle)}};
     vec3_normalize(&light);
-    float d = vec3_dot(&attr->n, &light);
-    img_set_p(o, float_to_rgb(d), x, y);
+    float_to_rgb(vec3_dot(&attr->n, &light), &color);
+    img_set_p(img, &color, x, y);
 }
 
 void img_render_obj (img_t* img, const obj_t* obj)
@@ -879,9 +839,9 @@ void img_render_obj (img_t* img, const obj_t* obj)
     size_t n = obj_get_nb_face(obj);
 
 
-    imgf_t* zbuf = imgf_new(img->w, img->h);
+    img_t* zbuf = img_new(img->w, img->h);
     for (size_t i = 0; i < zbuf->w*zbuf->h; i++) {
-        zbuf->buf[i] = -FLT_MAX;
+        zbuf->buf[i].z = -FLT_MAX;
     }
 
     for (size_t i = 0; i < 3; i++) {
@@ -912,37 +872,7 @@ void img_render_obj (img_t* img, const obj_t* obj)
         //printf("tri = %zu\n", i);
     }
 
-    imgf_free(zbuf);
-}
-
-void test_img (void)
-{
-    img_t* p = img_new(300, 100);
-    img_to_ppm(p, "black.ppm");
-    img_fill(p, IMG_RGB(255, 0, 0));
-    img_to_ppm(p, "red.ppm");
-    img_fill(p, IMG_RGB(0, 255, 0));
-    img_to_ppm(p, "green.ppm");
-    img_fill(p, IMG_RGB(0, 0, 255));
-    img_to_ppm(p, "blue.ppm");
-    img_line(p, 0xffffff, 0, 0, 300, 100);
-    img_line(p, 0xffffff, 0, 100, 300, 0);
-    img_to_ppm(p, "line.ppm");
-
-    img_to_ppm(p, "tri.ppm");
-}
-
-void test_mat_vec (void)
-{
-    mat4 m1, m2, m3;
-    mat4_id(&m1);
-    mat4_id(&m2);
-    mat4_mul(&m3, &m1, &m2);
-    mat4_print(&m1);
-    printf("\n");
-    mat4_print(&m2);
-    printf("\n");
-    mat4_print(&m3);
+    img_free(zbuf);
 }
 
 int main (int argc, char** argv)
@@ -956,7 +886,7 @@ int main (int argc, char** argv)
     obj_t* obj = obj_load("obj/head/head.obj");
     img_t* img = img_new(500, 500);
     for (FRAME = 0; FRAME <= FRAME_MAX; FRAME++) {
-        img_fill(img, 0x000000);
+        img_fill(img, &IMG_RGB(0,0,0));
         img_render_obj(img, obj);
         sprintf(fn, "out_%03zu.ppm", FRAME);
         img_to_ppm(img, fn);
