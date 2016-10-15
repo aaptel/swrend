@@ -34,6 +34,8 @@
 #include <assert.h>
 #include <float.h>
 
+#include <SDL.h>
+
 // basic utils
 
 static int g_debug = 0;
@@ -869,9 +871,102 @@ void img_render_obj (img_t* img, const obj_t* obj)
         // frag shader
 
         img_triangle(img, zbuf, pshader_color, v);
+
+        // wireframe
+
+        // img_line(img, 0xff0000, v[0].sv.x, v[0].sv.y, v[1].sv.x, v[1].sv.y);
+        // img_line(img, 0xff0000, v[1].sv.x, v[1].sv.y, v[2].sv.x, v[2].sv.y);
+        // img_line(img, 0xff0000, v[2].sv.x, v[2].sv.y, v[0].sv.x, v[0].sv.y);
+        //printf("tri = %zu\n", i);
     }
 
     img_free(zbuf);
+}
+
+void img_to_sdl_surface (const img_t* img, SDL_Surface* surf)
+{
+    size_t x = 0, y = 0;
+
+    for (size_t i = 0; i < img->w*img->h; i++) {
+        float r = img->buf[i].r, g = img->buf[i].g, b = img->buf[i].b;
+        uint32_t c;
+        c = ((uint32_t)(CLAMP(b, 0.0f, 1.0f)*255.0f)) & 0xff;
+        c |= ((uint32_t)(CLAMP(g, 0.0f, 1.0f)*255.0f)&0xff)<<8;
+        c |= ((uint32_t)(CLAMP(r, 0.0f, 1.0f)*255.0f) & 0xff)<<16;
+        c |= 0xff000000;
+        ((uint32_t*)surf->pixels)[img->w*(img->h-y-1)+x] = c;
+        x++;
+        if (x == img->w) {
+            x = 0;
+            y++;
+        }
+    }
+}
+
+#define WIDTH 500
+#define HEIGHT 500
+
+void sdl_main (void)
+{
+    SDL_Window* win;
+
+    SDL_Init(SDL_INIT_VIDEO);
+    win = SDL_CreateWindow("swrend",
+                           SDL_WINDOWPOS_UNDEFINED,
+                           SDL_WINDOWPOS_UNDEFINED,
+                           WIDTH, HEIGHT, SDL_WINDOW_SHOWN);
+
+    if (!win)
+        E("SDL create window fail: %s", SDL_GetError());
+
+    uint32_t rmask, gmask, bmask, amask;
+    bmask = 0x000000ff;
+    gmask = 0x0000ff00;
+    rmask = 0x00ff0000;
+    amask = 0xff000000;
+    SDL_Renderer* renderer = SDL_CreateRenderer(win, -1, 0);
+
+    img_t* img = img_new(WIDTH, HEIGHT);
+    int running = 1;
+    obj_t* obj = obj_load("obj/head/head.obj");
+
+    FRAME = 0;
+    while (running) {
+        SDL_Event ev;
+        while (SDL_PollEvent(&ev)) {
+            switch (ev.type) {
+            case SDL_KEYDOWN:
+            case SDL_QUIT:
+                running = 0;
+                break;
+            }
+        }
+
+        img_fill(img, &IMG_RGB(0,0,0));
+        img_render_obj(img, obj);
+
+        SDL_Surface* surf = SDL_CreateRGBSurface(0, WIDTH, HEIGHT, 32, rmask, gmask, bmask, amask);
+        img_to_sdl_surface(img, surf);
+        SDL_Texture* texture = SDL_CreateTextureFromSurface(renderer, surf);
+
+        SDL_SetRenderDrawColor(renderer, 0xff, 0xff, 0xff, 0xff);
+        SDL_RenderCopy(renderer, texture, NULL, NULL);
+        SDL_RenderPresent(renderer);
+
+        SDL_DestroyTexture(texture);
+        SDL_FreeSurface(surf);
+
+        FRAME++;
+        if (FRAME == FRAME_MAX)
+            FRAME = 0;
+
+        if (FRAME % 5 == 0) {
+            printf("FRAME = %zu\n", FRAME);
+        }
+    }
+
+    SDL_DestroyWindow(win);
+    SDL_Quit();
 }
 
 int main (int argc, char** argv)
@@ -881,22 +976,6 @@ int main (int argc, char** argv)
             g_debug = 1;
     }
 
-    char fn[512];
-    obj_t* obj = obj_load("obj/head/head.obj");
-    img_t* img = img_new(500, 500);
-    for (FRAME = 0; FRAME <= FRAME_MAX; FRAME++) {
-        img_fill(img, &IMG_RGB(0,0,0));
-        img_render_obj(img, obj);
-        sprintf(fn, "out_%03zu.ppm", FRAME);
-        img_to_ppm(img, fn);
-        printf("frame %03zu/%03zu -> %s\n", FRAME, FRAME_MAX, fn);
-        //return 0;
-    }
-
-    const char* cmd = "convert -dispose none -delay 1.5 out_*.ppm -coalesce out.gif";
-    printf("running cmd to make gif... %s\n", cmd);
-    system(cmd);
-    printf("ok\n");
-
+    sdl_main();
     return 0;
 }
