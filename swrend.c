@@ -501,6 +501,7 @@ typedef struct {
     vec3 *v, *n;
     vec2* uv;
     struct {size_t v[3], n[3], t[3];} *f;
+    img_t* tex_diffuse;
 } obj_t;
 
 typedef struct {
@@ -517,6 +518,27 @@ typedef struct {
     img_t* img;
     img_t* zbuf;
 } render_context_t;
+
+img_t* img_load(const char* fn);
+
+static bool obj_try_loading_texture (obj_t* obj, const char* objfn)
+{
+    char imgfn[512] = {0};
+    strncpy(imgfn, objfn, sizeof(imgfn)-1);
+    char* dot = strrchr(imgfn, '.');
+    if (!dot)
+        return false;
+
+    assert(dot-imgfn > 5);
+    strncpy(dot, ".bmp", 4);
+    obj->tex_diffuse = img_load(imgfn);
+    if (!obj->tex_diffuse) {
+        W("cannot open texture %s for model %s", imgfn, objfn);
+        return false;
+    }
+    return true;
+}
+
 obj_t* obj_load (const char* fn)
 {
     FILE* fh = fopen(fn, "r");
@@ -613,6 +635,9 @@ obj_t* obj_load (const char* fn)
     assert(nb_uv == obj->nb_uv);
 
     fclose(fh);
+
+    obj_try_loading_texture(obj, fn);
+
     return obj;
 }
 
