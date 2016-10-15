@@ -223,10 +223,8 @@ float lerp (float a, float b, float t)
     return (1.0f-t)*a + t*b;
 }
 
-float lerp3 (float a, float b, float c, float ta, float tb, float tc)
-{
-    return a*ta + b*tb + c*tc;
-}
+#define LERP3(bc, attr, members) \
+    ((bc)[0]*((attr)[0]) members + (bc)[1]*((attr)[1]) members + (bc)[2]*((attr)[2]) members)
 
 
 float vec3_dot (const vec3* a, const vec3* b)
@@ -503,16 +501,43 @@ typedef struct {
     vec3 *v, *n;
     vec2* uv;
     struct {size_t v[3], n[3], t[3];} *f;
+    img_t* tex_diffuse;
 } obj_t;
 
 typedef struct {
     vec4 v;  // coord world space
     vec2 sv; // coord screen space
     vec3 n; // normal
-    vec2 t; // [INTERPOLATED] texture coordinates
+    vec2 uv; // [INTERPOLATED] texture coordinates
     vec3 c; // [INTERPOLATED] color
     vec3 bc; // barycentric coefficent for interpolation
 } vert_attr_t;
+
+typedef struct {
+    const obj_t* obj;
+    img_t* img;
+    img_t* zbuf;
+} render_context_t;
+
+img_t* img_load(const char* fn);
+
+static bool obj_try_loading_texture (obj_t* obj, const char* objfn)
+{
+    char imgfn[512] = {0};
+    strncpy(imgfn, objfn, sizeof(imgfn)-1);
+    char* dot = strrchr(imgfn, '.');
+    if (!dot)
+        return false;
+
+    assert(dot-imgfn > 5);
+    strncpy(dot, ".bmp", 4);
+    obj->tex_diffuse = img_load(imgfn);
+    if (!obj->tex_diffuse) {
+        W("cannot open texture %s for model %s", imgfn, objfn);
+        return false;
+    }
+    return true;
+}
 
 obj_t* obj_load (const char* fn)
 {
@@ -714,14 +739,18 @@ bool shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert_attr_t
     memcpy(&out->bc, &clipbc, sizeof(clipbc));
 
     // interpolate world pos
-    out->v.x = out->bc.v[0]*attr[0].v.x + out->bc.v[1]*attr[1].v.x + out->bc.v[2]*attr[2].v.x;
-    out->v.y = out->bc.v[0]*attr[0].v.y + out->bc.v[1]*attr[1].v.y + out->bc.v[2]*attr[2].v.y;
-    out->v.z = out->bc.v[0]*attr[0].v.z + out->bc.v[1]*attr[1].v.z + out->bc.v[2]*attr[2].v.z;
+    out->v.x = LERP3(out->bc.v, attr, .v.x);
+    out->v.y = LERP3(out->bc.v, attr, .v.y);
+    out->v.z = LERP3(out->bc.v, attr, .v.z);
+
+    // interpolate uv
+    out->uv.x = LERP3(out->bc.v, attr, .uv.x);
+    out->uv.y = LERP3(out->bc.v, attr, .uv.y);
 
     // interpolate normal
-    out->n.x = out->bc.v[0]*attr[0].n.x + out->bc.v[1]*attr[1].n.x + out->bc.v[2]*attr[2].n.x;
-    out->n.y = out->bc.v[0]*attr[0].n.y + out->bc.v[1]*attr[1].n.y + out->bc.v[2]*attr[2].n.y;
-    out->n.z = out->bc.v[0]*attr[0].n.z + out->bc.v[1]*attr[1].n.z + out->bc.v[2]*attr[2].n.z;
+    out->n.x = LERP3(out->bc.v, attr, .n.x);
+    out->n.y = LERP3(out->bc.v, attr, .n.y);
+    out->n.z = LERP3(out->bc.v, attr, .n.z);
 
     // recompute per-triangle normals
     // vec3 ab, ac;
