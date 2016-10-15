@@ -501,7 +501,6 @@ typedef struct {
     vec3 *v, *n;
     vec2* uv;
     struct {size_t v[3], n[3], t[3];} *f;
-    img_t* tex_diffuse;
 } obj_t;
 
 typedef struct {
@@ -518,27 +517,6 @@ typedef struct {
     img_t* img;
     img_t* zbuf;
 } render_context_t;
-
-img_t* img_load(const char* fn);
-
-static bool obj_try_loading_texture (obj_t* obj, const char* objfn)
-{
-    char imgfn[512] = {0};
-    strncpy(imgfn, objfn, sizeof(imgfn)-1);
-    char* dot = strrchr(imgfn, '.');
-    if (!dot)
-        return false;
-
-    assert(dot-imgfn > 5);
-    strncpy(dot, ".bmp", 4);
-    obj->tex_diffuse = img_load(imgfn);
-    if (!obj->tex_diffuse) {
-        W("cannot open texture %s for model %s", imgfn, objfn);
-        return false;
-    }
-    return true;
-}
-
 obj_t* obj_load (const char* fn)
 {
     FILE* fh = fopen(fn, "r");
@@ -655,7 +633,7 @@ void obj_get_face (const obj_t* o, size_t i, vert_attr_t* v1, vert_attr_t* v2, v
     v3->n = o->n[o->f[i].n[2]];
 }
 
-typedef void (*pixel_shader_func) (img_t* out, vert_attr_t* attr, int x, int y);
+typedef void (*pixel_shader_func) (render_context_t* ctx, vert_attr_t* attr, int x, int y);
 
 // compute barycentric interpolation for point in triangle
 bool barycentric_coef (const vec2* p, const vec2* a, const vec2* b, const vec2* c, vec3* r)
@@ -760,11 +738,10 @@ bool shader_interpolate_attr (int x, int y, const vert_attr_t* attr, vert_attr_t
 
     vec3_normalize(&out->n);
 
-    // TODO interpolate uv coord, color
     return true;
 }
 
-static void _img_triangle_top (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
+static void _img_triangle_top (render_context_t* ctx, pixel_shader_func pshader, vert_attr_t* attr,
                                int x0, int y0, int x1, int y1, int x2)
 {
     float invslope1 = (x1 - x0) / (float)(y1 - y0);
@@ -779,12 +756,12 @@ static void _img_triangle_top (img_t* img, img_t* zbuf, pixel_shader_func pshade
         int minx = round(MIN(curx1, curx2));
         int maxx = round(MAX(curx1, curx2));
         for (int x = minx; x <= maxx; x++) {
-            if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
+            if (!(0 <= x&&x < ctx->img->w && 0 <= y&&y < ctx->img->h))
                 continue;
             bool r = shader_interpolate_attr(x, y, attr, &pattr);
-            if (r && pattr.v.z > IMG_P(zbuf, x, y).z) {
-                pshader(img, &pattr, x, y);
-                IMG_P(zbuf, x, y).z = pattr.v.z;
+            if (r && pattr.v.z > IMG_P(ctx->zbuf, x, y).z) {
+                pshader(ctx, &pattr, x, y);
+                IMG_P(ctx->zbuf, x, y).z = pattr.v.z;
             }
         }
         curx1 += invslope1;
@@ -792,7 +769,7 @@ static void _img_triangle_top (img_t* img, img_t* zbuf, pixel_shader_func pshade
     }
 }
 
-static void _img_triangle_bot (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr,
+static void _img_triangle_bot (render_context_t* ctx, pixel_shader_func pshader, vert_attr_t* attr,
                                int x0, int y0, int x1, int x2, int y2)
 {
     float invslope1 = (x2 - x0) / (float)(y2 - y0);
@@ -806,12 +783,12 @@ static void _img_triangle_bot (img_t* img, img_t* zbuf, pixel_shader_func pshade
         int minx = roundf(MIN(curx1, curx2));
         int maxx = roundf(MAX(curx1, curx2));
         for (int x = minx; x <= maxx; x++) {
-            if (!(0 <= x&&x < img->w && 0 <= y&&y < img->h))
+            if (!(0 <= x&&x < ctx->img->w && 0 <= y&&y < ctx->img->h))
                 continue;
             bool r = shader_interpolate_attr(x, y, attr, &pattr);
-            if (r && pattr.v.z > IMG_P(zbuf, x, y).z) {
-                pshader(img, &pattr, x, y);
-                IMG_P(zbuf, x, y).z = pattr.v.z;
+            if (r && pattr.v.z > IMG_P(ctx->zbuf, x, y).z) {
+                pshader(ctx, &pattr, x, y);
+                IMG_P(ctx->zbuf, x, y).z = pattr.v.z;
             }
         }
         curx1 -= invslope1;
@@ -820,7 +797,7 @@ static void _img_triangle_bot (img_t* img, img_t* zbuf, pixel_shader_func pshade
 }
 
 
-void img_triangle (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr_t* attr)
+void img_triangle (render_context_t* ctx, pixel_shader_func pshader, vert_attr_t* attr)
 {
     int x0 = attr[0].sv.x,
         y0 = attr[0].sv.y,
@@ -851,10 +828,10 @@ void img_triangle (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr
         return;
 
     int x3 = (int)(x0 + ((float)(y1 - y0) / (float)(y2 - y0)) * (x2 - x0));
-    int y3 = y1;
+    // int y3 = y1;
 
-    _img_triangle_top(img, zbuf, pshader, attr, x0, y0, x1, y1, x3);
-    _img_triangle_bot(img, zbuf, pshader, attr, x1, y1, x3, x2, y2);
+    _img_triangle_top(ctx, pshader, attr, x0, y0, x1, y1, x3);
+    _img_triangle_bot(ctx, pshader, attr, x1, y1, x3, x2, y2);
 
     // wireframe
     // img_line(img, &IMG_RGB(1.0f, 1.0f, 1.0f), x0, y0, x2, y2);
@@ -866,7 +843,7 @@ void img_triangle (img_t* img, img_t* zbuf, pixel_shader_func pshader, vert_attr
 size_t FRAME = 0, FRAME_MAX = 30;
 
 // simple color pixel shader
-void pshader_color (img_t* img, vert_attr_t* attr, int x, int y)
+void pshader_color (render_context_t* ctx, vert_attr_t* attr, int x, int y)
 {
     // zbuffer
     // float depth = attr->v.z / 500.0f;
@@ -882,24 +859,27 @@ void pshader_color (img_t* img, vert_attr_t* attr, int x, int y)
     vec3 light = {.v = {cosf(light_angle), 1.0, sinf(light_angle)}};
     vec3_normalize(&light);
     float_to_rgb(vec3_dot(&attr->n, &light), &color);
-    img_set_p(img, &color, x, y);
+    img_set_p(ctx->img, &color, x, y);
 }
 
 void img_render_obj (img_t* img, const obj_t* obj)
 {
+    render_context_t ctx = {0};
     mat4 trans, scale, final;
     mat4_translate(&trans, 1.0f, 1.0f, 1.0f);
     mat4_scale(&scale, .5f*img->w, .5f*img->w, .5f*img->w);
     mat4_mul(&final, &scale, &trans);
 
+    ctx.img = img;
+    ctx.obj = obj;
+    ctx.zbuf = img_new(img->w, img->h);
+
     vert_attr_t v[3];
-    vec4 tmp1, tmp;
+    vec4 tmp;
     size_t n = obj_get_nb_face(obj);
 
-
-    img_t* zbuf = img_new(img->w, img->h);
-    for (size_t i = 0; i < zbuf->w*zbuf->h; i++) {
-        zbuf->buf[i].z = -FLT_MAX;
+    for (size_t i = 0; i < ctx.zbuf->w*ctx.zbuf->h; i++) {
+        ctx.zbuf->buf[i].z = -FLT_MAX;
     }
 
     for (size_t i = 0; i < 3; i++) {
@@ -920,7 +900,7 @@ void img_render_obj (img_t* img, const obj_t* obj)
 
         // frag shader
 
-        img_triangle(img, zbuf, pshader_color, v);
+        img_triangle(&ctx, pshader_color, v);
 
         // wireframe
 
@@ -930,7 +910,7 @@ void img_render_obj (img_t* img, const obj_t* obj)
         //printf("tri = %zu\n", i);
     }
 
-    img_free(zbuf);
+    img_free(ctx.zbuf);
 }
 
 void img_to_sdl_surface (const img_t* img, SDL_Surface* surf)
