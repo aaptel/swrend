@@ -118,6 +118,23 @@ void img_set_p (img_t* p, vec3* c, int x, int y)
         IMG_P(p, x, y) = *c;
 }
 
+void img_get_uv (img_t* p, vec3* c, vec2* uv)
+{
+    float x = fmodf(uv->x, 1.0f);
+    if (x < 0)
+        x += 1.0f;
+    x = roundf(x*(p->w-1));
+
+    float y = fmodf(uv->y, 1.0f);
+    if (y < 0)
+        y += 1.0f;
+    y = roundf(y*(p->h-1));
+    int xx = ((int)x)%p->w;
+    int yy = p->h-1-(((int)y)%p->h);
+    *c = IMG_P(p, xx, yy);
+}
+
+
 img_t* img_new (size_t w, size_t h)
 {
     img_t *p = xcalloc(1, sizeof(*p));
@@ -500,7 +517,7 @@ typedef struct {
     size_t nb_v, nb_n, nb_f, nb_uv;
     vec3 *v, *n;
     vec2* uv;
-    struct {size_t v[3], n[3], t[3];} *f;
+    struct {size_t v[3], n[3], uv[3];} *f;
     img_t* tex_diffuse;
 } obj_t;
 
@@ -611,13 +628,13 @@ obj_t* obj_load (const char* fn)
                         ind+0, ind+1, ind+2, ind+3, ind+4, ind+5,
                         ind+6, ind+7, ind+8) == 9) {
             obj->f[nb_f].v[0] = ind[0]-1;
-            obj->f[nb_f].t[0] = ind[1]-1;
+            obj->f[nb_f].uv[0] = ind[1]-1;
             obj->f[nb_f].n[0] = ind[2]-1;
             obj->f[nb_f].v[1] = ind[3]-1;
-            obj->f[nb_f].t[1] = ind[4]-1;
+            obj->f[nb_f].uv[1] = ind[4]-1;
             obj->f[nb_f].n[1] = ind[5]-1;
             obj->f[nb_f].v[2] = ind[6]-1;
-            obj->f[nb_f].t[2] = ind[7]-1;
+            obj->f[nb_f].uv[2] = ind[7]-1;
             obj->f[nb_f].n[2] = ind[8]-1;
             nb_f++;
         }
@@ -650,12 +667,15 @@ void obj_get_face (const obj_t* o, size_t i, vert_attr_t* v1, vert_attr_t* v2, v
 {
     vec4_from_v3(&v1->v, &o->v[o->f[i].v[0]], 1.0f);
     v1->n = o->n[o->f[i].n[0]];
+    v1->uv = o->uv[o->f[i].uv[0]];
 
     vec4_from_v3(&v2->v, &o->v[o->f[i].v[1]], 1.0f);
     v2->n = o->n[o->f[i].n[1]];
+    v2->uv = o->uv[o->f[i].uv[1]];
 
     vec4_from_v3(&v3->v, &o->v[o->f[i].v[2]], 1.0f);
     v3->n = o->n[o->f[i].n[2]];
+    v3->uv = o->uv[o->f[i].uv[2]];
 }
 
 typedef void (*pixel_shader_func) (render_context_t* ctx, vert_attr_t* attr, int x, int y);
@@ -883,7 +903,8 @@ void pshader_color (render_context_t* ctx, vert_attr_t* attr, int x, int y)
     float light_angle = (FRAME/(float)FRAME_MAX)*2.0f*3.14159265;
     vec3 light = {.v = {cosf(light_angle), 1.0, sinf(light_angle)}};
     vec3_normalize(&light);
-    float_to_rgb(vec3_dot(&attr->n, &light), &color);
+    img_get_uv(ctx->obj->tex_diffuse, &color, &attr->uv);
+    vec3_mul(&color, vec3_dot(&attr->n, &light));
     img_set_p(ctx->img, &color, x, y);
 }
 
