@@ -36,6 +36,9 @@
 
 #include <SDL.h>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 // basic utils
 
 static int g_debug = 0;
@@ -155,6 +158,24 @@ int img_to_ppm (const img_t* p, const char* fn)
         return -1;
     }
     return 0;
+}
+
+img_t* img_load (const char* fn)
+{
+    int w, h, comp, req_comp = 4;
+    uint8_t* data = stbi_load(fn, &w, &h, &comp, req_comp);
+    if (!data) {
+        W("stbi_load %s returned NULL", data);
+        return NULL;
+    }
+
+    assert(comp == req_comp);
+
+    img_t* img = img_new(w, h);
+    for (size_t i = 0; i < w*h; i++) {
+        img->buf[i] = IMG_RGB(data[i*comp]/255.0f, data[i*comp+1]/255.0f, data[i*comp+2]/255.0f);
+    }
+    return img;
 }
 
 void img_fill (img_t* p, vec3* c)
