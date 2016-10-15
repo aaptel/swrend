@@ -1045,13 +1045,38 @@ void sdl_main (void)
     SDL_Quit();
 }
 
+void gif_main (void)
+{
+    obj_t* obj = obj_load("obj/head/head.obj");
+    img_t* img = img_new(WIDTH, HEIGHT);
+    char fn[512];
+
+    for (FRAME = 0; FRAME <= FRAME_MAX; FRAME++) {
+        img_fill(img, &IMG_RGB(0,0,0));
+        img_render_obj(img, obj);
+        sprintf(fn, "out_%03zu.ppm", FRAME);
+        img_to_ppm(img, fn);
+        printf("frame %03zu/%03zu -> %s\n", FRAME, FRAME_MAX, fn);
+        //return 0;
+    }
+    const char* cmd = "convert -dispose none -delay 1.5 out_*.ppm -coalesce out.gif";
+    printf("running cmd to make gif... %s\n", cmd);
+    system(cmd);
+    printf("ok\n");
+}
+
 int main (int argc, char** argv)
 {
+    int opt_gif = 0;
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0)
             g_debug = 1;
+        if (strcmp(argv[i], "-g") == 0)
+            opt_gif = 1;
     }
-
-    sdl_main();
+    if (opt_gif)
+        gif_main();
+    else
+        sdl_main();
     return 0;
 }
