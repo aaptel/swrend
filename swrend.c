@@ -41,6 +41,9 @@
 
 // basic utils
 
+enum {OUT_SDL, OUT_GIF, OUT_SINGLE};
+static int opt_output_mode = OUT_SDL;
+
 static int g_debug = 0;
 
 #define E(fmt, ...) \
@@ -892,11 +895,11 @@ void pshader_color (render_context_t* ctx, vert_attr_t* attr, int x, int y)
 {
     // zbuffer
     // float depth = attr->v.z / 500.0f;
-    // img_set_p(img, &IMG_RGB(depth, depth, depth), x, y);
+    // img_set_p(ctx->img, &IMG_RGB(depth, depth, depth), x, y);
     // return;
 
     // normals
-    // img_set_p(img, &attr->n, x, y);
+    // img_set_p(ctx->img, &attr->n, x, y);
     // return;
 
     vec3 color;
@@ -905,6 +908,7 @@ void pshader_color (render_context_t* ctx, vert_attr_t* attr, int x, int y)
     vec3_normalize(&light);
     img_get_uv(ctx->obj->tex_diffuse, &color, &attr->uv);
     vec3_mul(&color, vec3_dot(&attr->n, &light));
+    //float_to_rgb(vec3_dot(&attr->n, &light), &color);
     img_set_p(ctx->img, &color, x, y);
 }
 
@@ -1057,7 +1061,8 @@ void gif_main (void)
         sprintf(fn, "out_%03zu.ppm", FRAME);
         img_to_ppm(img, fn);
         printf("frame %03zu/%03zu -> %s\n", FRAME, FRAME_MAX, fn);
-        //return 0;
+        if (opt_output_mode == OUT_SINGLE)
+            return;
     }
     const char* cmd = "convert -dispose none -delay 1.5 out_*.ppm -coalesce out.gif";
     printf("running cmd to make gif... %s\n", cmd);
@@ -1067,16 +1072,18 @@ void gif_main (void)
 
 int main (int argc, char** argv)
 {
-    int opt_gif = 0;
+
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-v") == 0)
             g_debug = 1;
         if (strcmp(argv[i], "-g") == 0)
-            opt_gif = 1;
+            opt_output_mode = OUT_GIF;
+        if (strcmp(argv[i], "-s") == 0)
+            opt_output_mode = OUT_SINGLE;
     }
-    if (opt_gif)
-        gif_main();
-    else
+    if (opt_output_mode == OUT_SDL)
         sdl_main();
+    else
+        gif_main();
     return 0;
 }
