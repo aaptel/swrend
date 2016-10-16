@@ -502,6 +502,17 @@ void mat4_mul_v4 (vec4* r, const mat4* m, const vec4* v)
     }
 }
 
+void mat4_projection(mat4* r, float near, float far, float sideup, float sideleft)
+{
+    mat4_id(r);
+    r->v[0] = near/sideleft;
+    r->v[5] = near/sideup;
+    r->v[10] = -(far+near)/(far-near);
+    r->v[11] = -1.0f;
+    r->v[14] = 2.0f*far*near/(far-near);
+    r->v[15] = 0.0f;
+}
+
 void mat4_print (const mat4* m)
 {
     printf("%+.3f %+.3f %+.3f %+.3f\n"
